@@ -58,3 +58,13 @@ export interface TournamentMatch {
   nextMatchId?: string; // ID of the match the winner advances to
   nextMatchSlot?: 1 | 2; // Which slot (pair1 or pair2) in the next match
 }
+
+export interface Stage {
+  id: string;
+  name: string;
+  pairs: Pair[]; // Pairs are now specific to a stage
+  groups: Group[];
+  tournamentMatches: TournamentMatch[];
+  createdAt: number;
+  status: 'OPEN' | 'FINISHED';
+}

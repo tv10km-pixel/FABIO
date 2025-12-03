@@ -1,5 +1,5 @@
 {
-  "name": "Beach Tennis Manager",
-  "description": "A modern application to register and manage Beach Tennis athletes.",
+  "name": "BT Arena",
+  "description": "Gerenciador profissional de torneios de Beach Tennis: Cadastro de atletas, formação de duplas, fase de grupos e torneio mata-mata.",
   "requestFramePermissions": []
 }

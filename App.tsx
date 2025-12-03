@@ -1,15 +1,23 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, UserPlus, Trophy, Search, Save, X, Medal, Users, LayoutGrid, Layers, GitMerge } from 'lucide-react';
-import { Category, Athlete, SubCategory, Pair, Group, Match, TournamentMatch } from './types';
+import { Plus, UserPlus, Trophy, Search, Save, X, Medal, Users, LayoutGrid, Layers, GitMerge, Calendar, ArrowLeft, AlertTriangle } from 'lucide-react';
+import { Category, Athlete, SubCategory, Pair, Group, Match, TournamentMatch, Stage } from './types';
 import { AthleteCard } from './components/AthleteCard';
 import { CategoryChart } from './components/CategoryChart';
 import { PairingManager } from './components/PairingManager';
 import { GroupManager } from './components/GroupManager';
 import { TournamentManager } from './components/TournamentManager';
+import { StageList } from './components/StageList';
+import { SocialShareModal, ShareData } from './components/SocialShareModal';
 
 const App: React.FC = () => {
   // Navigation State
-  const [activeTab, setActiveTab] = useState<'athletes' | 'pairs' | 'groups' | 'tournament'>('athletes');
+  const [activeTab, setActiveTab] = useState<'athletes' | 'stages'>('stages');
+  const [activeStageId, setActiveStageId] = useState<string | null>(null);
+  const [stageView, setStageView] = useState<'pairs' | 'groups' | 'tournament'>('pairs');
+  
+  // Share State
+  const [shareData, setShareData] = useState<ShareData | null>(null);
 
   // Athlete State
   const [name, setName] = useState('');
@@ -22,22 +30,14 @@ const App: React.FC = () => {
   });
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Pair State
-  const [pairs, setPairs] = useState<Pair[]>(() => {
-    const saved = localStorage.getItem('bt_pairs');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  // Group State
-  const [groups, setGroups] = useState<Group[]>(() => {
-    const saved = localStorage.getItem('bt_groups');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  // Tournament State
-  const [tournamentMatches, setTournamentMatches] = useState<TournamentMatch[]>(() => {
-    const saved = localStorage.getItem('bt_tournament');
-    return saved ? JSON.parse(saved) : [];
+  // Stage State
+  const [stages, setStages] = useState<Stage[]>(() => {
+    const saved = localStorage.getItem('bt_stages');
+    const parsedStages = saved ? JSON.parse(saved) : [];
+    return parsedStages.map((s: any) => ({
+      ...s,
+      pairs: s.pairs || []
+    }));
   });
 
   // Persistence
@@ -46,18 +46,51 @@ const App: React.FC = () => {
   }, [athletes]);
 
   useEffect(() => {
-    localStorage.setItem('bt_pairs', JSON.stringify(pairs));
-  }, [pairs]);
+    localStorage.setItem('bt_stages', JSON.stringify(stages));
+  }, [stages]);
 
-  useEffect(() => {
-    localStorage.setItem('bt_groups', JSON.stringify(groups));
-  }, [groups]);
+  const currentStage = stages.find(s => s.id === activeStageId);
 
-  useEffect(() => {
-    localStorage.setItem('bt_tournament', JSON.stringify(tournamentMatches));
-  }, [tournamentMatches]);
+  // --- Reset Handler ---
+  const handleResetSystem = useCallback(() => {
+    setTimeout(() => {
+      const confirmText = "⚠️ ZERAR SISTEMA ⚠️\n\nTem certeza que deseja apagar:\n- Todas as DUPLAS\n- Todas as ETAPAS\n- Todos os GRUPOS e JOGOS\n\n✅ O cadastro de atletas será MANTIDO.\n\nEssa ação é irreversível.";
+      
+      if (window.confirm(confirmText)) {
+        localStorage.setItem('bt_stages', '[]');
+        setStages([]);
+        setActiveStageId(null);
+        setActiveTab('stages');
+      }
+    }, 50);
+  }, []);
 
-  // Athlete Handlers
+  // --- Share Handler ---
+  const handleShareGroupMatch = (groupName: string, match: Match) => {
+    if (!currentStage) return;
+    setShareData({
+      stageName: currentStage.name,
+      matchLabel: `${groupName} - ${match.label}`,
+      pair1: match.pair1,
+      pair2: match.pair2,
+      score1: match.score1 ?? 0,
+      score2: match.score2 ?? 0
+    });
+  };
+
+  const handleShareTournamentMatch = (match: TournamentMatch) => {
+    if (!currentStage || !match.pair1 || !match.pair2) return;
+    setShareData({
+      stageName: currentStage.name,
+      matchLabel: `${match.label} - Mata-Mata`,
+      pair1: match.pair1,
+      pair2: match.pair2,
+      score1: match.score1 ?? 0,
+      score2: match.score2 ?? 0
+    });
+  };
+
+  // --- Athlete Handlers ---
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !selectedCategory || !selectedSubCategory) return;
@@ -102,10 +135,12 @@ const App: React.FC = () => {
   };
 
   const handleDelete = useCallback((id: string) => {
-    // Check if athlete is in a pair first
-    const inPair = pairs.some(p => p.player1.id === id || p.player2.id === id);
+    const inPair = stages.some(stage => 
+      stage.pairs.some(p => p.player1.id === id || p.player2.id === id)
+    );
+    
     if (inPair) {
-      alert("Este atleta está em uma dupla. Desfaça a dupla antes de excluir o atleta.");
+      alert("Este atleta está em uma dupla em uma etapa existente. Remova a dupla da etapa antes de excluir o atleta.");
       return;
     }
 
@@ -113,88 +148,120 @@ const App: React.FC = () => {
     if (editingId === id) {
       handleCancelEdit();
     }
-  }, [editingId, pairs]);
+  }, [editingId, stages]);
 
-  // Pair Handlers
-  const handleAddPair = (p1: Athlete, p2: Athlete) => {
-    const newPair: Pair = {
+  // --- Stage Handlers ---
+  const handleAddStage = (name: string) => {
+    const newStage: Stage = {
       id: crypto.randomUUID(),
-      player1: p1,
-      player2: p2,
-      createdAt: Date.now()
+      name,
+      pairs: [],
+      groups: [],
+      tournamentMatches: [],
+      createdAt: Date.now(),
+      status: 'OPEN'
     };
-    setPairs(prev => [newPair, ...prev]);
+    setStages(prev => [newStage, ...prev]);
+  };
+
+  const handleDeleteStage = useCallback((stageId: string) => {
+    setStages(prev => prev.filter(s => s.id !== stageId));
+    if (activeStageId === stageId) {
+      setActiveStageId(null);
+    }
+  }, [activeStageId]);
+
+  const handleEditStage = (stageId: string, newName: string) => {
+    setStages(prev => prev.map(s => s.id === stageId ? { ...s, name: newName } : s));
+  };
+
+  const updateCurrentStage = (updater: (stage: Stage) => Stage) => {
+    if (!activeStageId) return;
+    setStages(prev => prev.map(s => s.id === activeStageId ? updater(s) : s));
+  };
+
+  // --- Pair Handlers ---
+  const handleAddPair = (p1: Athlete, p2: Athlete) => {
+    updateCurrentStage(stage => {
+      const newPair: Pair = {
+        id: crypto.randomUUID(),
+        player1: p1,
+        player2: p2,
+        createdAt: Date.now()
+      };
+      return { ...stage, pairs: [newPair, ...stage.pairs] };
+    });
   };
 
   const handleDeletePair = (pairId: string) => {
-    // Check if pair is in a group
-    const inGroup = groups.some(g => g.pairs.some(p => p.id === pairId));
-    if (inGroup) {
-      alert("Esta dupla está em um grupo. Desfaça o grupo antes de excluir a dupla.");
-      return;
-    }
-    setPairs(prev => prev.filter(p => p.id !== pairId));
+    updateCurrentStage(stage => ({
+      ...stage,
+      pairs: stage.pairs.filter(p => p.id !== pairId),
+    }));
   };
 
-  // Group Handlers
+  // --- Group Handlers ---
   const handleAddGroup = (selectedPairs: Pair[]) => {
-    const groupNumber = groups.length + 1;
-    const newGroup: Group = {
-      id: crypto.randomUUID(),
-      name: `Grupo ${groupNumber}`,
-      pairs: selectedPairs,
-      createdAt: Date.now()
-    };
-    setGroups(prev => [newGroup, ...prev]);
+    updateCurrentStage(stage => {
+      const groupNumber = stage.groups.length + 1;
+      const newGroup: Group = {
+        id: crypto.randomUUID(),
+        name: `Grupo ${groupNumber}`,
+        pairs: selectedPairs,
+        createdAt: Date.now()
+      };
+      return { ...stage, groups: [newGroup, ...stage.groups] };
+    });
   };
 
   const handleDeleteGroup = (groupId: string) => {
-    setGroups(prev => prev.filter(g => g.id !== groupId));
+    updateCurrentStage(stage => ({
+      ...stage,
+      groups: stage.groups.filter(g => g.id !== groupId),
+      tournamentMatches: [] // Reset tournament
+    }));
   };
 
   const handleGenerateMatches = (groupId: string) => {
-    setGroups(prev => prev.map(group => {
-      if (group.id !== groupId) return group;
-      
-      const [p1, p2, p3] = group.pairs;
-      // Ensure we have 3 pairs to create the specific schedule
-      if (!p1 || !p2 || !p3) return group;
+    updateCurrentStage(stage => ({
+      ...stage,
+      groups: stage.groups.map(group => {
+        if (group.id !== groupId) return group;
+        const [p1, p2, p3] = group.pairs;
+        if (!p1 || !p2 || !p3) return group;
 
-      const matches: Match[] = [
-        { id: crypto.randomUUID(), pair1: p1, pair2: p2, label: 'Jogo 1' },
-        { id: crypto.randomUUID(), pair1: p2, pair2: p3, label: 'Jogo 2' },
-        { id: crypto.randomUUID(), pair1: p1, pair2: p3, label: 'Jogo 3' },
-      ];
-
-      return { ...group, matches };
+        const matches: Match[] = [
+          { id: crypto.randomUUID(), pair1: p1, pair2: p2, label: 'Jogo 1' },
+          { id: crypto.randomUUID(), pair1: p2, pair2: p3, label: 'Jogo 2' },
+          { id: crypto.randomUUID(), pair1: p1, pair2: p3, label: 'Jogo 3' },
+        ];
+        return { ...group, matches };
+      })
     }));
   };
 
   const handleUpdateMatchScore = (groupId: string, matchId: string, score1: number, score2: number) => {
-    setGroups(prev => prev.map(group => {
-      if (group.id !== groupId) return group;
-
-      const updatedMatches = group.matches?.map(match => {
-        if (match.id !== matchId) return match;
-        return {
-          ...match,
-          score1,
-          score2,
-          isFinished: true
-        };
-      });
-
-      return { ...group, matches: updatedMatches };
+    updateCurrentStage(stage => ({
+      ...stage,
+      groups: stage.groups.map(group => {
+        if (group.id !== groupId) return group;
+        const updatedMatches = group.matches?.map(match => {
+          if (match.id !== matchId) return match;
+          return { ...match, score1, score2, isFinished: true };
+        });
+        return { ...group, matches: updatedMatches };
+      })
     }));
   };
 
-  // Tournament Handlers
+  // --- Tournament Handlers ---
   const handleGenerateTournament = () => {
+    if (!currentStage) return;
+
     const firstPlacePairs: Pair[] = [];
     const secondPlacePairs: Pair[] = [];
 
-    // 1. Calculate Standings for all groups
-    groups.forEach(group => {
+    currentStage.groups.forEach(group => {
       if (!group.matches) return;
 
       const statsMap = new Map<string, { pair: Pair, wins: number, balance: number }>();
@@ -226,17 +293,8 @@ const App: React.FC = () => {
       return;
     }
 
-    // 2. Shuffle 2nd place pairs to randomize matchups
     const shuffledSeconds = [...secondPlacePairs].sort(() => Math.random() - 0.5);
-
-    // 3. Create First Round Matches (1st vs 2nd)
     const newMatches: TournamentMatch[] = [];
-    
-    // Determine tree size (next power of 2)
-    const totalQualifiers = firstPlacePairs.length + secondPlacePairs.length;
-    // Simple logic: Pair firsts with random seconds. 
-    // If we have unbalanced numbers, this simple logic might leave some out, but assuming groups of 3 are full.
-    
     const round1MatchCount = Math.min(firstPlacePairs.length, shuffledSeconds.length);
     const round1Matches: TournamentMatch[] = [];
 
@@ -244,24 +302,17 @@ const App: React.FC = () => {
       round1Matches.push({
         id: crypto.randomUUID(),
         round: 1,
-        label: `Oitavas/Quartas ${i + 1}`, // Generic label, refined below
+        label: '', 
         pair1: firstPlacePairs[i],
         pair2: shuffledSeconds[i],
       });
     }
 
-    // 4. Build the bracket structure
-    // We need to link matches. 
-    // If we have 2 matches -> 1 Final (Total 3 matches in tree? No, 2 semi -> 1 final)
-    // If we have 4 matches -> 2 Semis -> 1 Final
-    // If we have 8 matches -> 4 Quarters -> 2 Semis -> 1 Final
-    
     let currentRoundMatches = round1Matches;
     let roundNum = 1;
     let matchCounter = 1;
 
-    // Add first round to main list
-    currentRoundMatches.forEach((m, idx) => {
+    currentRoundMatches.forEach((m) => {
        m.label = `J${matchCounter++} (R${roundNum})`;
        newMatches.push(m);
     });
@@ -271,35 +322,27 @@ const App: React.FC = () => {
       const nextRoundNum = roundNum + 1;
 
       for (let i = 0; i < currentRoundMatches.length; i += 2) {
-        // Create a match for the next round
         const nextMatchId = crypto.randomUUID();
         const nextMatch: TournamentMatch = {
           id: nextMatchId,
           round: nextRoundNum,
           label: `J${matchCounter++} (R${nextRoundNum})`,
-          // Pairs are undefined initially
         };
         newMatches.push(nextMatch);
         nextRoundMatches.push(nextMatch);
 
-        // Link previous matches to this one
         currentRoundMatches[i].nextMatchId = nextMatchId;
         currentRoundMatches[i].nextMatchSlot = 1;
         
         if (currentRoundMatches[i+1]) {
           currentRoundMatches[i+1].nextMatchId = nextMatchId;
           currentRoundMatches[i+1].nextMatchSlot = 2;
-        } else {
-           // Bye situation: Auto advance logic could go here, but for now simple
-           // If odd number, the last one might not have a next match in this loop logic
-           // For simple Groups of 3 app, we usually have 2, 4, 8 groups -> 2, 4, 8 pairs -> Perfect power of 2
         }
       }
       currentRoundMatches = nextRoundMatches;
       roundNum++;
     }
 
-    // Fix labels based on total rounds
     const totalRounds = roundNum;
     newMatches.forEach(m => {
        if (m.round === totalRounds) m.label = "Final";
@@ -308,298 +351,362 @@ const App: React.FC = () => {
        else m.label = `Rodada ${m.round}`;
     });
 
-    setTournamentMatches(newMatches);
+    updateCurrentStage(stage => ({ ...stage, tournamentMatches: newMatches }));
   };
 
   const handleUpdateTournamentScore = (matchId: string, score1: number, score2: number) => {
-    setTournamentMatches(prev => {
-      const newMatches = [...prev];
+    updateCurrentStage(stage => {
+      const newMatches = [...stage.tournamentMatches];
       const matchIndex = newMatches.findIndex(m => m.id === matchId);
-      if (matchIndex === -1) return prev;
+      if (matchIndex === -1) return stage;
 
       const match = { ...newMatches[matchIndex] };
       match.score1 = score1;
       match.score2 = score2;
 
-      // Determine winner
-      if (score1 > score2 && match.pair1) {
-        match.winner = match.pair1;
-      } else if (score2 > score1 && match.pair2) {
-        match.winner = match.pair2;
-      } else {
-        match.winner = undefined; // Draw or not finished
-      }
+      if (score1 > score2 && match.pair1) match.winner = match.pair1;
+      else if (score2 > score1 && match.pair2) match.winner = match.pair2;
+      else match.winner = undefined;
 
       newMatches[matchIndex] = match;
 
-      // Advance winner to next match
       if (match.winner && match.nextMatchId) {
         const nextMatchIndex = newMatches.findIndex(m => m.id === match.nextMatchId);
         if (nextMatchIndex !== -1) {
           const nextMatch = { ...newMatches[nextMatchIndex] };
-          if (match.nextMatchSlot === 1) {
-            nextMatch.pair1 = match.winner;
-          } else {
-            nextMatch.pair2 = match.winner;
-          }
+          if (match.nextMatchSlot === 1) nextMatch.pair1 = match.winner;
+          else nextMatch.pair2 = match.winner;
           newMatches[nextMatchIndex] = nextMatch;
         }
       }
 
-      return newMatches;
+      return { ...stage, tournamentMatches: newMatches };
     });
   };
 
-  const filteredAthletes = athletes.filter(a => 
-    a.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // --- Sorting ---
+  const filteredAthletes = athletes
+    .filter(a => a.name.toLowerCase().includes(searchTerm.toLowerCase()))
+    .sort((a, b) => {
+      const categoryOrder: Record<string, number> = {
+        [Category.A]: 1, [Category.B]: 2, [Category.C]: 3,
+        [Category.D]: 4, [Category.SUB15]: 5, [Category.PLUS40]: 6
+      };
+      const catDiff = (categoryOrder[a.category] || 99) - (categoryOrder[b.category] || 99);
+      if (catDiff !== 0) return catDiff;
+      return a.name.localeCompare(b.name);
+    });
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 pb-20">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
+      <SocialShareModal data={shareData} onClose={() => setShareData(null)} />
+
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <div className="bg-orange-500 p-2 rounded-lg">
+            <div className="bg-gradient-to-br from-orange-500 to-amber-500 p-2 rounded-lg shadow-md">
               <Trophy className="text-white w-5 h-5" />
             </div>
-            <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-orange-600 to-amber-600">
+            <h1 className="text-xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-orange-600 to-amber-600 tracking-tight hidden sm:block">
               BT Arena
             </h1>
           </div>
           
-          <nav className="flex items-center p-1 bg-gray-100 rounded-lg overflow-x-auto">
+          <div className="flex items-center gap-2">
+            <nav className="flex items-center p-1 bg-gray-100/80 rounded-lg overflow-x-auto scrollbar-hide">
+              {!activeStageId ? (
+                <>
+                  <button
+                    onClick={() => setActiveTab('athletes')}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-bold transition-all whitespace-nowrap ${
+                      activeTab === 'athletes' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <LayoutGrid size={16} />
+                    <span className="hidden sm:inline">Cadastro</span>
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('stages')}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-bold transition-all whitespace-nowrap ${
+                      activeTab === 'stages' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <Calendar size={16} />
+                    <span className="hidden sm:inline">Etapas</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => {
+                       setActiveStageId(null);
+                       setActiveTab('stages');
+                    }}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 mr-2 border border-indigo-200"
+                  >
+                    <ArrowLeft size={16} />
+                    <span className="hidden sm:inline">Voltar</span>
+                  </button>
+                  <div className="h-6 w-px bg-gray-300 mx-1"></div>
+                  
+                  <button
+                    onClick={() => setStageView('pairs')}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-bold transition-all whitespace-nowrap ${
+                      stageView === 'pairs' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <Users size={16} />
+                    <span className="hidden sm:inline">Duplas</span>
+                  </button>
+
+                  <button
+                    onClick={() => setStageView('groups')}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-bold transition-all whitespace-nowrap ${
+                      stageView === 'groups' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <Layers size={16} />
+                    <span className="hidden sm:inline">Grupos</span>
+                  </button>
+                  <button
+                    onClick={() => setStageView('tournament')}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-bold transition-all whitespace-nowrap ${
+                      stageView === 'tournament' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <GitMerge size={16} />
+                    <span className="hidden sm:inline">Mata-Mata</span>
+                  </button>
+                </>
+              )}
+            </nav>
+
             <button
-              onClick={() => setActiveTab('athletes')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap ${
-                activeTab === 'athletes' 
-                  ? 'bg-white text-gray-900 shadow-sm' 
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
+              type="button"
+              onClick={handleResetSystem}
+              className="ml-2 p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              title="Zerar Sistema (Manter Atletas)"
             >
-              <LayoutGrid size={16} />
-              <span className="hidden sm:inline">Cadastro</span>
+              <AlertTriangle size={20} />
             </button>
-            <button
-              onClick={() => setActiveTab('pairs')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap ${
-                activeTab === 'pairs' 
-                  ? 'bg-white text-gray-900 shadow-sm' 
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <Users size={16} />
-              <span className="hidden sm:inline">Duplas</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('groups')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap ${
-                activeTab === 'groups' 
-                  ? 'bg-white text-gray-900 shadow-sm' 
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <Layers size={16} />
-              <span className="hidden sm:inline">Grupos</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('tournament')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap ${
-                activeTab === 'tournament' 
-                  ? 'bg-white text-gray-900 shadow-sm' 
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <GitMerge size={16} />
-              <span className="hidden sm:inline">Mata-Mata</span>
-            </button>
-          </nav>
+          </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        
-        {activeTab === 'tournament' ? (
-          <TournamentManager 
-             matches={tournamentMatches}
-             onGenerate={handleGenerateTournament}
-             onUpdateScore={handleUpdateTournamentScore}
-             hasGroups={groups.length > 0}
-          />
-        ) : activeTab === 'groups' ? (
-          <GroupManager
-            pairs={pairs}
-            groups={groups}
-            onAddGroup={handleAddGroup}
-            onDeleteGroup={handleDeleteGroup}
-            onGenerateMatches={handleGenerateMatches}
-            onUpdateScore={handleUpdateMatchScore}
-          />
-        ) : activeTab === 'pairs' ? (
-          <PairingManager 
-            athletes={athletes} 
-            pairs={pairs} 
-            onAddPair={handleAddPair}
-            onDeletePair={handleDeletePair}
-          />
+      <main className="flex-grow max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+        {activeStageId && currentStage ? (
+          <>
+            <div className="mb-6 flex flex-col">
+              <span className="text-xs font-bold text-indigo-500 uppercase tracking-wider">Etapa Ativa</span>
+              <h2 className="text-3xl font-extrabold text-gray-800">{currentStage.name}</h2>
+            </div>
+
+            {stageView === 'pairs' && (
+              <PairingManager 
+                athletes={athletes} 
+                pairs={currentStage.pairs} 
+                onAddPair={handleAddPair}
+                onDeletePair={handleDeletePair}
+              />
+            )}
+
+            {stageView === 'groups' && (
+              <GroupManager
+                pairs={currentStage.pairs}
+                groups={currentStage.groups}
+                onAddGroup={handleAddGroup}
+                onDeleteGroup={handleDeleteGroup}
+                onGenerateMatches={handleGenerateMatches}
+                onUpdateScore={handleUpdateMatchScore}
+                onShare={handleShareGroupMatch}
+              />
+            )}
+
+            {stageView === 'tournament' && (
+              <TournamentManager 
+                matches={currentStage.tournamentMatches}
+                onGenerate={handleGenerateTournament}
+                onUpdateScore={handleUpdateTournamentScore}
+                onShare={handleShareTournamentMatch}
+                hasGroups={currentStage.groups.length > 0}
+              />
+            )}
+          </>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            
-            {/* Left Column: Form (Sticky on Desktop) */}
-            <div className="lg:col-span-4 lg:sticky lg:top-24 h-fit space-y-6">
-              <div className={`bg-white rounded-2xl shadow-sm border ${editingId ? 'border-blue-200 ring-1 ring-blue-100' : 'border-gray-100'} p-6 transition-all duration-300`}>
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center space-x-2">
-                    <UserPlus className={`w-5 h-5 ${editingId ? 'text-blue-600' : 'text-teal-600'}`} />
-                    <h2 className="text-lg font-bold text-gray-800">
-                      {editingId ? 'Editar Atleta' : 'Novo Cadastro'}
-                    </h2>
+          <>
+            {activeTab === 'stages' && (
+              <StageList 
+                stages={stages}
+                onAddStage={handleAddStage}
+                onSelectStage={(id) => {
+                  setActiveStageId(id);
+                  setStageView('pairs');
+                }}
+                onDeleteStage={handleDeleteStage}
+                onEditStage={handleEditStage}
+              />
+            )}
+
+            {activeTab === 'athletes' && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                <div className="lg:col-span-4 lg:sticky lg:top-24 h-fit space-y-6">
+                  <div className={`bg-white rounded-2xl shadow-sm border ${editingId ? 'border-blue-200 ring-1 ring-blue-100' : 'border-gray-100'} p-6 transition-all duration-300`}>
+                    <div className="flex items-center justify-between mb-6">
+                      <div className="flex items-center space-x-2">
+                        <UserPlus className={`w-5 h-5 ${editingId ? 'text-blue-600' : 'text-teal-600'}`} />
+                        <h2 className="text-lg font-bold text-gray-800">
+                          {editingId ? 'Editar Atleta' : 'Novo Cadastro'}
+                        </h2>
+                      </div>
+                      {editingId && (
+                        <button onClick={handleCancelEdit} className="text-xs text-gray-500 hover:text-red-500 flex items-center gap-1 bg-gray-50 px-2 py-1 rounded">
+                          <X size={14} /> Cancelar
+                        </button>
+                      )}
+                    </div>
+                    
+                    <form onSubmit={handleSubmit} className="space-y-6">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Nome do Atleta</label>
+                        <input
+                          type="text"
+                          value={name}
+                          onChange={(e) => setName(e.target.value)}
+                          placeholder="Ex: João Silva"
+                          className="w-full px-4 py-3 rounded-lg border border-gray-200 bg-slate-800 text-white placeholder-gray-400 focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none transition-all font-medium"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Categoria</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {Object.values(Category).map((cat) => (
+                            <button
+                              key={cat}
+                              type="button"
+                              onClick={() => setSelectedCategory(cat)}
+                              className={`px-2 py-2 rounded-lg text-sm font-bold transition-all ${
+                                selectedCategory === cat
+                                  ? editingId 
+                                    ? 'bg-blue-600 text-white shadow-md transform scale-105'
+                                    : 'bg-teal-600 text-white shadow-md transform scale-105'
+                                  : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                              }`}
+                            >
+                              {cat}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Nível</label>
+                        <div className="flex gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedSubCategory(SubCategory.GOLD)}
+                            className={`flex-1 flex items-center justify-center space-x-2 py-2.5 rounded-lg border transition-all ${
+                              selectedSubCategory === SubCategory.GOLD
+                                ? 'bg-yellow-50 border-yellow-400 text-yellow-800 ring-1 ring-yellow-400'
+                                : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                            }`}
+                          >
+                            <Medal size={18} className={selectedSubCategory === SubCategory.GOLD ? 'fill-yellow-500 text-yellow-600' : 'text-gray-300'} />
+                            <span className="font-bold">Ouro</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedSubCategory(SubCategory.SILVER)}
+                            className={`flex-1 flex items-center justify-center space-x-2 py-2.5 rounded-lg border transition-all ${
+                              selectedSubCategory === SubCategory.SILVER
+                                ? 'bg-slate-100 border-slate-400 text-slate-800 ring-1 ring-slate-400'
+                                : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                            }`}
+                          >
+                            <Medal size={18} className={selectedSubCategory === SubCategory.SILVER ? 'fill-slate-400 text-slate-500' : 'text-gray-300'} />
+                            <span className="font-bold">Prata</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={!name || !selectedCategory || !selectedSubCategory}
+                        className={`w-full py-3.5 rounded-xl font-bold text-white shadow-lg transition-all flex items-center justify-center space-x-2 ${
+                          !name || !selectedCategory || !selectedSubCategory
+                            ? 'bg-gray-300 cursor-not-allowed shadow-none'
+                            : editingId
+                              ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600'
+                              : 'bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600'
+                        } hover:shadow-xl active:scale-95`}
+                      >
+                        {editingId ? <Save className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+                        <span>{editingId ? 'Salvar Alterações' : 'Cadastrar Atleta'}</span>
+                      </button>
+                    </form>
                   </div>
-                  {editingId && (
-                    <button 
-                      onClick={handleCancelEdit}
-                      className="text-xs text-gray-500 hover:text-red-500 flex items-center gap-1 bg-gray-50 px-2 py-1 rounded"
-                    >
-                      <X size={14} /> Cancelar
-                    </button>
-                  )}
+                  <div className="hidden lg:block">
+                     <CategoryChart athletes={athletes} />
+                  </div>
                 </div>
-                
-                <form onSubmit={handleSubmit} className="space-y-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Nome do Atleta</label>
-                    <input
-                      type="text"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder="Ex: João Silva"
-                      className="w-full px-4 py-3 rounded-lg border border-gray-200 bg-slate-800 text-white placeholder-gray-400 focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none transition-all"
-                    />
+
+                <div className="lg:col-span-8 space-y-6">
+                  <div className="block lg:hidden">
+                    <CategoryChart athletes={athletes} />
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Categoria</label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {Object.values(Category).map((cat) => (
-                        <button
-                          key={cat}
-                          type="button"
-                          onClick={() => setSelectedCategory(cat)}
-                          className={`px-2 py-2 rounded-lg text-sm font-medium transition-all ${
-                            selectedCategory === cat
-                              ? editingId 
-                                ? 'bg-blue-600 text-white shadow-md transform scale-105'
-                                : 'bg-teal-600 text-white shadow-md transform scale-105'
-                              : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                          }`}
-                        >
-                          {cat}
-                        </button>
+                  <div className="flex flex-col sm:flex-row justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-gray-100 gap-4">
+                     <h2 className="text-lg font-bold text-gray-800">Atletas ({athletes.length})</h2>
+                     <div className="relative w-full sm:w-64">
+                       <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                       <input 
+                          type="text" 
+                          placeholder="Buscar atleta..." 
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          className="w-full pl-9 pr-4 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                       />
+                     </div>
+                  </div>
+
+                  {filteredAthletes.length === 0 ? (
+                    <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-gray-300">
+                      <div className="bg-orange-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <UserPlus className="w-8 h-8 text-orange-400" />
+                      </div>
+                      <h3 className="text-lg font-medium text-gray-900">Nenhum atleta encontrado</h3>
+                      <p className="text-gray-500 mt-1">Cadastre o primeiro atleta para começar o jogo!</p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      {filteredAthletes.map((athlete, index) => (
+                        <AthleteCard 
+                          key={athlete.id} 
+                          index={index + 1}
+                          athlete={athlete}
+                          previousAthlete={filteredAthletes[index - 1]}
+                          onDelete={handleDelete}
+                          onEdit={handleEdit}
+                        />
                       ))}
                     </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Nível</label>
-                    <div className="flex gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedSubCategory(SubCategory.GOLD)}
-                        className={`flex-1 flex items-center justify-center space-x-2 py-2.5 rounded-lg border transition-all ${
-                          selectedSubCategory === SubCategory.GOLD
-                            ? 'bg-yellow-50 border-yellow-400 text-yellow-800 ring-1 ring-yellow-400'
-                            : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
-                        }`}
-                      >
-                        <Medal size={18} className={selectedSubCategory === SubCategory.GOLD ? 'fill-yellow-500 text-yellow-600' : 'text-gray-300'} />
-                        <span className="font-medium">Ouro</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedSubCategory(SubCategory.SILVER)}
-                        className={`flex-1 flex items-center justify-center space-x-2 py-2.5 rounded-lg border transition-all ${
-                          selectedSubCategory === SubCategory.SILVER
-                            ? 'bg-slate-100 border-slate-400 text-slate-800 ring-1 ring-slate-400'
-                            : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
-                        }`}
-                      >
-                        <Medal size={18} className={selectedSubCategory === SubCategory.SILVER ? 'fill-slate-400 text-slate-500' : 'text-gray-300'} />
-                        <span className="font-medium">Prata</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={!name || !selectedCategory || !selectedSubCategory}
-                    className={`w-full py-3.5 rounded-xl font-bold text-white shadow-lg transition-all flex items-center justify-center space-x-2 ${
-                      !name || !selectedCategory || !selectedSubCategory
-                        ? 'bg-gray-300 cursor-not-allowed shadow-none'
-                        : editingId
-                          ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600'
-                          : 'bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600'
-                    } hover:shadow-xl active:scale-95`}
-                  >
-                    {editingId ? <Save className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
-                    <span>{editingId ? 'Salvar Alterações' : 'Cadastrar Atleta'}</span>
-                  </button>
-                </form>
-              </div>
-
-              {/* Stats Chart Component */}
-              <div className="hidden lg:block">
-                 <CategoryChart athletes={athletes} />
-              </div>
-            </div>
-
-            {/* Right Column: List */}
-            <div className="lg:col-span-8 space-y-6">
-              
-              {/* Mobile Chart */}
-              <div className="block lg:hidden">
-                <CategoryChart athletes={athletes} />
-              </div>
-
-              <div className="flex flex-col sm:flex-row justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-gray-100 gap-4">
-                 <h2 className="text-lg font-bold text-gray-800">Atletas ({athletes.length})</h2>
-                 <div className="relative w-full sm:w-64">
-                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                   <input 
-                      type="text" 
-                      placeholder="Buscar atleta..." 
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-9 pr-4 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-                   />
-                 </div>
-              </div>
-
-              {filteredAthletes.length === 0 ? (
-                <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-gray-300">
-                  <div className="bg-orange-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <UserPlus className="w-8 h-8 text-orange-400" />
-                  </div>
-                  <h3 className="text-lg font-medium text-gray-900">Nenhum atleta encontrado</h3>
-                  <p className="text-gray-500 mt-1">Cadastre o primeiro atleta para começar o jogo!</p>
+                  )}
                 </div>
-              ) : (
-                <div className="flex flex-col gap-3">
-                  {filteredAthletes.map((athlete, index) => (
-                    <AthleteCard 
-                      key={athlete.id} 
-                      index={index + 1}
-                      athlete={athlete}
-                      previousAthlete={filteredAthletes[index - 1]}
-                      onDelete={handleDelete}
-                      onEdit={handleEdit}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+              </div>
+            )}
+          </>
         )}
       </main>
+
+      <footer className="border-t border-gray-200 bg-white mt-auto">
+        <div className="max-w-6xl mx-auto px-4 py-6 flex flex-col sm:flex-row justify-between items-center text-sm text-gray-400">
+          <p className="mb-2 sm:mb-0">&copy; {new Date().getFullYear()} BT Arena. Todos os direitos reservados.</p>
+          <div className="flex items-center gap-2">
+            <Trophy size={14} className="text-orange-400" />
+            <span className="font-medium text-gray-500">Versão 1.2</span>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 };

@@ -1,18 +1,21 @@
+
 import React, { useState } from 'react';
 import { TournamentMatch, Pair } from '../types';
-import { Trophy, Save, RefreshCw, AlertCircle } from 'lucide-react';
+import { Trophy, Save, RefreshCw, AlertCircle, Share2 } from 'lucide-react';
 
 interface TournamentManagerProps {
   matches: TournamentMatch[];
   onGenerate: () => void;
   onUpdateScore: (matchId: string, s1: number, s2: number) => void;
+  onShare: (match: TournamentMatch) => void;
   hasGroups: boolean;
 }
 
 const MatchCard: React.FC<{ 
   match: TournamentMatch; 
   onUpdateScore: (id: string, s1: number, s2: number) => void; 
-}> = ({ match, onUpdateScore }) => {
+  onShare: (match: TournamentMatch) => void;
+}> = ({ match, onUpdateScore, onShare }) => {
   const [s1, setS1] = useState(match.score1?.toString() || '');
   const [s2, setS2] = useState(match.score2?.toString() || '');
 
@@ -35,7 +38,18 @@ const MatchCard: React.FC<{
       {/* Label */}
       <div className="bg-slate-50 border-b border-gray-100 px-3 py-1.5 flex justify-between items-center">
         <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">{match.label}</span>
-        {isFinished && <Trophy size={12} className="text-amber-500" />}
+        <div className="flex items-center gap-2">
+          {isFinished && (
+            <button 
+              onClick={() => onShare(match)}
+              className="text-pink-500 hover:text-pink-600 hover:bg-pink-50 rounded-full p-1 transition-colors"
+              title="Compartilhar"
+            >
+              <Share2 size={12} />
+            </button>
+          )}
+          {isFinished && <Trophy size={12} className="text-amber-500" />}
+        </div>
       </div>
 
       <div className="p-3 space-y-2">
@@ -125,6 +139,7 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
   matches, 
   onGenerate, 
   onUpdateScore,
+  onShare,
   hasGroups
 }) => {
   // Group matches by round
@@ -202,7 +217,8 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
                 <MatchCard 
                   key={match.id} 
                   match={match} 
-                  onUpdateScore={onUpdateScore} 
+                  onUpdateScore={onUpdateScore}
+                  onShare={onShare}
                 />
               ))}
             </div>

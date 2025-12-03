@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Pair, Group, Category, Match } from '../types';
-import { Layers, Users, X, Search, Trash2, CheckCircle2, Swords, Save, Trophy } from 'lucide-react';
+import { Layers, Users, X, Search, Trash2, CheckCircle2, Swords, Save, Trophy, Share2 } from 'lucide-react';
 
 interface GroupManagerProps {
   pairs: Pair[];
@@ -10,14 +10,17 @@ interface GroupManagerProps {
   onDeleteGroup: (groupId: string) => void;
   onGenerateMatches: (groupId: string) => void;
   onUpdateScore: (groupId: string, matchId: string, score1: number, score2: number) => void;
+  onShare: (groupName: string, match: Match) => void;
 }
 
 // Internal component for Match row to manage its own input state
 const MatchRow: React.FC<{ 
   match: Match; 
   groupId: string;
-  onUpdateScore: (groupId: string, matchId: string, s1: number, s2: number) => void; 
-}> = ({ match, groupId, onUpdateScore }) => {
+  groupName: string;
+  onUpdateScore: (groupId: string, matchId: string, s1: number, s2: number) => void;
+  onShare: (groupName: string, match: Match) => void;
+}> = ({ match, groupId, groupName, onUpdateScore, onShare }) => {
   const [s1, setS1] = useState(match.score1?.toString() || '');
   const [s2, setS2] = useState(match.score2?.toString() || '');
 
@@ -40,6 +43,15 @@ const MatchRow: React.FC<{
         <span className="font-bold text-indigo-600 text-[10px] uppercase bg-indigo-50 px-2 py-0.5 rounded">
           {match.label}
         </span>
+        {match.isFinished && (
+          <button 
+            onClick={() => onShare(groupName, match)}
+            className="text-pink-500 hover:text-pink-600 hover:bg-pink-50 p-1 rounded-full transition-colors"
+            title="Compartilhar Card"
+          >
+            <Share2 size={14} />
+          </button>
+        )}
       </div>
       
       <div className="flex items-center justify-between gap-2">
@@ -197,7 +209,8 @@ export const GroupManager: React.FC<GroupManagerProps> = ({
   onAddGroup, 
   onDeleteGroup,
   onGenerateMatches,
-  onUpdateScore
+  onUpdateScore,
+  onShare
 }) => {
   const [selectedPairIds, setSelectedPairIds] = useState<string[]>([]);
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
@@ -329,8 +342,7 @@ export const GroupManager: React.FC<GroupManagerProps> = ({
           )}
         </div>
         
-        {/* Staging Area - Moved to left column for better space management on desktop if needed, 
-            but kept linear here as per user request for flow */}
+        {/* Staging Area */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
           <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Novo Grupo (3 Duplas)</h3>
           
@@ -437,8 +449,10 @@ export const GroupManager: React.FC<GroupManagerProps> = ({
                                <MatchRow 
                                   key={match.id} 
                                   match={match} 
-                                  groupId={group.id} 
-                                  onUpdateScore={onUpdateScore} 
+                                  groupId={group.id}
+                                  groupName={group.name}
+                                  onUpdateScore={onUpdateScore}
+                                  onShare={onShare}
                                />
                              ))}
                            </div>
