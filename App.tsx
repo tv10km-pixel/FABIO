@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, UserPlus, Trophy, Search, Save, X, Medal, Users, LayoutGrid, Layers, GitMerge, Calendar, ArrowLeft, AlertTriangle } from 'lucide-react';
+import { Plus, UserPlus, Trophy, Search, Save, X, Medal, Users, LayoutGrid, Layers, GitMerge, Calendar, ArrowLeft, AlertTriangle, Monitor } from 'lucide-react';
 import { Category, Athlete, SubCategory, Pair, Group, Match, TournamentMatch, Stage } from './types';
 import { AthleteCard } from './components/AthleteCard';
 import { CategoryChart } from './components/CategoryChart';
@@ -9,12 +9,14 @@ import { GroupManager } from './components/GroupManager';
 import { TournamentManager } from './components/TournamentManager';
 import { StageList } from './components/StageList';
 import { SocialShareModal, ShareData } from './components/SocialShareModal';
+import { TVDashboard } from './components/TVDashboard';
 
 const App: React.FC = () => {
   // Navigation State
   const [activeTab, setActiveTab] = useState<'athletes' | 'stages'>('stages');
   const [activeStageId, setActiveStageId] = useState<string | null>(null);
   const [stageView, setStageView] = useState<'pairs' | 'groups' | 'tournament'>('pairs');
+  const [isTVMode, setIsTVMode] = useState(false);
   
   // Share State
   const [shareData, setShareData] = useState<ShareData | null>(null);
@@ -397,6 +399,12 @@ const App: React.FC = () => {
       return a.name.localeCompare(b.name);
     });
 
+  if (isTVMode) {
+    // Pass ALL stages to TVDashboard, but only those with active pairs to avoid empty screens
+    const activeStages = stages.filter(s => s.pairs.length > 0);
+    return <TVDashboard stages={activeStages} onClose={() => setIsTVMode(false)} />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
       <SocialShareModal data={shareData} onClose={() => setShareData(null)} />
@@ -480,6 +488,18 @@ const App: React.FC = () => {
                 </>
               )}
             </nav>
+
+            {/* TV Mode Button - Always available when there are stages */}
+            {stages.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setIsTVMode(true)}
+                className="ml-2 p-2 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors border border-transparent hover:border-indigo-100"
+                title="Abrir Painel de TV / Monitor (Todas Etapas)"
+              >
+                <Monitor size={20} />
+              </button>
+            )}
 
             <button
               type="button"
@@ -703,7 +723,7 @@ const App: React.FC = () => {
           <p className="mb-2 sm:mb-0">&copy; {new Date().getFullYear()} BT Arena. Todos os direitos reservados.</p>
           <div className="flex items-center gap-2">
             <Trophy size={14} className="text-orange-400" />
-            <span className="font-medium text-gray-500">Versão 1.2</span>
+            <span className="font-medium text-gray-500">Versão 1.3</span>
           </div>
         </div>
       </footer>
