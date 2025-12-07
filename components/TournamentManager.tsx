@@ -1,54 +1,82 @@
 
 import React, { useState } from 'react';
 import { TournamentMatch, Pair } from '../types';
-import { Trophy, Save, RefreshCw, AlertCircle, Share2 } from 'lucide-react';
+import { Trophy, Save, RefreshCw, AlertCircle, Share2, Medal, MapPin } from 'lucide-react';
 
 interface TournamentManagerProps {
   matches: TournamentMatch[];
   onGenerate: () => void;
-  onUpdateScore: (matchId: string, s1: number, s2: number) => void;
+  onUpdateScore: (matchId: string, s1: number, s2: number, court: string) => void;
   onShare: (match: TournamentMatch) => void;
   hasGroups: boolean;
 }
 
 const MatchCard: React.FC<{ 
   match: TournamentMatch; 
-  onUpdateScore: (id: string, s1: number, s2: number) => void; 
+  onUpdateScore: (id: string, s1: number, s2: number, court: string) => void; 
   onShare: (match: TournamentMatch) => void;
 }> = ({ match, onUpdateScore, onShare }) => {
   const [s1, setS1] = useState(match.score1?.toString() || '');
   const [s2, setS2] = useState(match.score2?.toString() || '');
+  const [court, setCourt] = useState(match.court || '');
 
   const handleSave = () => {
     const v1 = parseInt(s1);
     const v2 = parseInt(s2);
     if (!isNaN(v1) && !isNaN(v2)) {
-      onUpdateScore(match.id, v1, v2);
+      onUpdateScore(match.id, v1, v2, court);
+    } else {
+       // Allow saving court only
+       onUpdateScore(match.id, v1 || 0, v2 || 0, court);
     }
   };
 
   const isFinished = match.winner !== undefined;
   const isP1Winner = match.winner?.id === match.pair1?.id;
   const isP2Winner = match.winner?.id === match.pair2?.id;
+  const is3rdPlace = match.label.includes("3º");
 
   return (
     <div className={`relative flex flex-col bg-white border rounded-xl shadow-sm overflow-hidden min-w-[240px] w-full mb-4 transition-all ${
-      isFinished ? 'border-amber-200 ring-1 ring-amber-100' : 'border-gray-200'
+      isFinished ? (is3rdPlace ? 'border-orange-300 ring-1 ring-orange-200' : 'border-amber-200 ring-1 ring-amber-100') : 'border-gray-200'
     }`}>
-      {/* Label */}
-      <div className="bg-slate-50 border-b border-gray-100 px-3 py-1.5 flex justify-between items-center">
-        <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">{match.label}</span>
-        <div className="flex items-center gap-2">
-          {isFinished && (
-            <button 
-              onClick={() => onShare(match)}
-              className="text-pink-500 hover:text-pink-600 hover:bg-pink-50 rounded-full p-1 transition-colors"
-              title="Compartilhar"
-            >
-              <Share2 size={12} />
-            </button>
-          )}
-          {isFinished && <Trophy size={12} className="text-amber-500" />}
+      {/* Label and Court Input Header */}
+      <div className={`border-b px-3 py-2 flex justify-between items-center gap-2 ${
+          is3rdPlace ? 'bg-orange-50 border-orange-100' : 'bg-slate-50 border-gray-100'
+      }`}>
+        <div className="flex flex-col w-full gap-1">
+           <div className="flex justify-between items-center">
+             <span className={`text-[10px] font-bold uppercase tracking-wider shrink-0 ${
+                  is3rdPlace ? 'text-orange-600' : 'text-gray-500'
+              }`}>
+                  {is3rdPlace && <Medal size={10} className="inline mr-1"/>}
+                  {match.label}
+              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                {isFinished && (
+                  <button 
+                    onClick={() => onShare(match)}
+                    className="text-pink-500 hover:text-pink-600 hover:bg-pink-50 rounded-full p-1 transition-colors"
+                    title="Compartilhar"
+                  >
+                    <Share2 size={12} />
+                  </button>
+                )}
+                {isFinished && <Trophy size={12} className={is3rdPlace ? "text-orange-500" : "text-amber-500"} />}
+              </div>
+           </div>
+           
+           {/* Prominent Court Input */}
+           <div className="relative">
+              <MapPin size={10} className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input 
+                type="text" 
+                value={court} 
+                onChange={(e) => setCourt(e.target.value)}
+                placeholder="Definir Quadra..." 
+                className="w-full bg-white border border-gray-200 rounded px-1.5 py-1 pl-4 text-[10px] font-bold text-gray-800 focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder-gray-400"
+              />
+           </div>
         </div>
       </div>
 
@@ -128,7 +156,7 @@ const MatchCard: React.FC<{
           onClick={handleSave}
           className="w-full py-2 bg-amber-50 text-amber-700 text-xs font-bold hover:bg-amber-100 transition-colors border-t border-amber-100 flex items-center justify-center gap-1"
         >
-          <Save size={14} /> Salvar Resultado
+          <Save size={14} /> Salvar
         </button>
       )}
     </div>
@@ -152,7 +180,7 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
   const roundNumbers = Object.keys(rounds).map(Number).sort((a, b) => a - b);
   
   const getRoundName = (round: number, totalRounds: number) => {
-    if (round === totalRounds) return "Final";
+    if (round === totalRounds) return "Finais";
     if (round === totalRounds - 1) return "Semifinais";
     if (round === totalRounds - 2) return "Quartas de Final";
     return `Rodada ${round}`;
@@ -207,23 +235,32 @@ export const TournamentManager: React.FC<TournamentManagerProps> = ({
       </div>
 
       <div className="flex gap-8 min-w-max">
-        {roundNumbers.map((round) => (
-          <div key={round} className="w-64 flex flex-col">
-            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 text-center border-b pb-2">
-              {getRoundName(round, totalRounds)}
-            </h3>
-            <div className="flex-1 flex flex-col justify-around gap-4">
-              {rounds[round].map(match => (
-                <MatchCard 
-                  key={match.id} 
-                  match={match} 
-                  onUpdateScore={onUpdateScore}
-                  onShare={onShare}
-                />
-              ))}
+        {roundNumbers.map((round) => {
+          // Sort to put final on top
+          const sortedMatches = [...rounds[round]].sort((a, b) => {
+              if (a.label.includes("Final") && !b.label.includes("Final")) return -1;
+              if (b.label.includes("Final") && !a.label.includes("Final")) return 1;
+              return 0;
+          });
+
+          return (
+            <div key={round} className="w-64 flex flex-col">
+              <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 text-center border-b pb-2">
+                {getRoundName(round, totalRounds)}
+              </h3>
+              <div className="flex-1 flex flex-col justify-around gap-4">
+                {sortedMatches.map(match => (
+                  <MatchCard 
+                    key={match.id} 
+                    match={match} 
+                    onUpdateScore={onUpdateScore}
+                    onShare={onShare}
+                  />
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

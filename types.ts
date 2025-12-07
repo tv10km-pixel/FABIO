@@ -33,6 +33,7 @@ export interface Match {
   pair1: Pair;
   pair2: Pair;
   label: string; // e.g., "Jogo 1"
+  court?: string; // Where the match is played
   score1?: number; // Games won by pair 1
   score2?: number; // Games won by pair 2
   isFinished?: boolean;
@@ -50,6 +51,7 @@ export interface TournamentMatch {
   id: string;
   round: number; // 1 = Quarters (or first round), 2 = Semis, 3 = Final
   label: string; // "Quartas 1", "Semi 1", etc.
+  court?: string; // Where the match is played
   pair1?: Pair;
   pair2?: Pair;
   score1?: number;
@@ -57,6 +59,8 @@ export interface TournamentMatch {
   winner?: Pair;
   nextMatchId?: string; // ID of the match the winner advances to
   nextMatchSlot?: 1 | 2; // Which slot (pair1 or pair2) in the next match
+  loserNextMatchId?: string; // ID of the match the loser advances to (for 3rd place)
+  loserNextMatchSlot?: 1 | 2; // Which slot for the loser
 }
 
 export interface Stage {

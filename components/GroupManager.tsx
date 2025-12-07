@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Pair, Group, Category, Match } from '../types';
-import { Layers, Users, X, Search, Trash2, CheckCircle2, Swords, Save, Trophy, Share2 } from 'lucide-react';
+import { Layers, Users, X, Search, Trash2, CheckCircle2, Swords, Save, Trophy, Share2, MapPin } from 'lucide-react';
 
 interface GroupManagerProps {
   pairs: Pair[];
@@ -9,7 +9,7 @@ interface GroupManagerProps {
   onAddGroup: (selectedPairs: Pair[]) => void;
   onDeleteGroup: (groupId: string) => void;
   onGenerateMatches: (groupId: string) => void;
-  onUpdateScore: (groupId: string, matchId: string, score1: number, score2: number) => void;
+  onUpdateScore: (groupId: string, matchId: string, score1: number, score2: number, court: string) => void;
   onShare: (groupName: string, match: Match) => void;
 }
 
@@ -18,17 +18,21 @@ const MatchRow: React.FC<{
   match: Match; 
   groupId: string;
   groupName: string;
-  onUpdateScore: (groupId: string, matchId: string, s1: number, s2: number) => void;
+  onUpdateScore: (groupId: string, matchId: string, s1: number, s2: number, court: string) => void;
   onShare: (groupName: string, match: Match) => void;
 }> = ({ match, groupId, groupName, onUpdateScore, onShare }) => {
   const [s1, setS1] = useState(match.score1?.toString() || '');
   const [s2, setS2] = useState(match.score2?.toString() || '');
+  const [court, setCourt] = useState(match.court || '');
 
   const handleSave = () => {
     const v1 = parseInt(s1);
     const v2 = parseInt(s2);
     if (!isNaN(v1) && !isNaN(v2)) {
-      onUpdateScore(groupId, match.id, v1, v2);
+      onUpdateScore(groupId, match.id, v1, v2, court);
+    } else {
+        // Allow saving just the court if scores are empty
+        onUpdateScore(groupId, match.id, v1 || 0, v2 || 0, court);
     }
   };
 
@@ -36,76 +40,85 @@ const MatchRow: React.FC<{
   const isWin2 = (match.score2 ?? 0) > (match.score1 ?? 0) && match.isFinished;
 
   return (
-    <div className={`bg-white p-3 rounded-lg border shadow-sm text-sm transition-all ${
-      match.isFinished ? 'border-green-200 bg-green-50/30' : 'border-gray-200'
+    <div className={`bg-white rounded-xl border shadow-sm transition-all overflow-hidden ${
+      match.isFinished ? 'border-green-200 bg-green-50/30' : 'border-gray-200 hover:border-indigo-300'
     }`}>
-      <div className="flex justify-between items-center mb-2">
-        <span className="font-bold text-indigo-600 text-[10px] uppercase bg-indigo-50 px-2 py-0.5 rounded">
-          {match.label}
-        </span>
-        {match.isFinished && (
-          <button 
-            onClick={() => onShare(groupName, match)}
-            className="text-pink-500 hover:text-pink-600 hover:bg-pink-50 p-1 rounded-full transition-colors"
-            title="Compartilhar Card"
-          >
-            <Share2 size={14} />
-          </button>
-        )}
-      </div>
       
-      <div className="flex items-center justify-between gap-2">
-        {/* Pair 1 */}
-        <div className={`flex-1 text-center truncate text-xs font-medium transition-colors ${isWin1 ? 'text-green-700 font-bold' : 'text-gray-700'}`} 
-             title={`${match.pair1.player1.name}/${match.pair1.player2.name}`}>
-          {match.pair1.player1.name}
-          <div className="text-[10px] text-gray-500">{match.pair1.player2.name}</div>
-        </div>
+      {/* HEADER: Label | Court | Actions */}
+      <div className="flex items-center gap-2 px-3 py-2 bg-gray-50/80 border-b border-gray-100">
+         {/* Label */}
+         <span className="font-bold text-indigo-600 text-[10px] uppercase bg-white border border-indigo-100 px-2 py-1 rounded shadow-sm whitespace-nowrap min-w-[60px] text-center">
+            {match.label}
+         </span>
+         
+         {/* Court Input */}
+         <div className="relative flex-1">
+           <MapPin size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+           <input 
+              type="text" 
+              value={court} 
+              onChange={(e) => setCourt(e.target.value)}
+              placeholder="Quadra..." 
+              className="w-full bg-white border border-gray-200 text-xs rounded-md py-1.5 pl-7 pr-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-bold text-gray-700 h-8 placeholder-gray-400"
+            />
+         </div>
 
-        {/* Score Inputs */}
-        <div className="flex items-center gap-1.5">
-          <input
-            type="number"
-            min="0"
-            max="12"
-            value={s1}
-            onChange={(e) => setS1(e.target.value)}
-            className={`w-12 h-10 text-center border rounded-lg font-bold text-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-colors ${
-              isWin1 
-                ? 'bg-green-600 border-green-600 text-white' 
-                : 'bg-slate-700 border-slate-600 text-white placeholder-gray-400'
-            }`}
-          />
-          <span className="text-gray-400 font-bold text-xs">X</span>
-          <input
-            type="number"
-            min="0"
-            max="12"
-            value={s2}
-            onChange={(e) => setS2(e.target.value)}
-            className={`w-12 h-10 text-center border rounded-lg font-bold text-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-colors ${
-              isWin2 
-                ? 'bg-green-600 border-green-600 text-white' 
-                : 'bg-slate-700 border-slate-600 text-white placeholder-gray-400'
-            }`}
-          />
-        </div>
+         {/* Actions */}
+         <div className="flex items-center gap-1 shrink-0">
+            <button 
+              onClick={handleSave}
+              className="h-8 px-3 bg-indigo-500 hover:bg-indigo-600 text-white rounded-md flex items-center justify-center shadow-sm transition-colors gap-1.5"
+              title="Salvar Resultado e Quadra"
+            >
+              <Save size={14} />
+              <span className="text-[10px] font-bold uppercase hidden sm:inline">Salvar</span>
+            </button>
+            {match.isFinished && (
+              <button 
+                onClick={() => onShare(groupName, match)}
+                className="h-8 w-8 text-pink-500 bg-white border border-pink-100 hover:bg-pink-50 rounded-md flex items-center justify-center transition-colors"
+                title="Compartilhar"
+              >
+                <Share2 size={14} />
+              </button>
+            )}
+         </div>
+      </div>
 
-        {/* Pair 2 */}
-        <div className={`flex-1 text-center truncate text-xs font-medium transition-colors ${isWin2 ? 'text-green-700 font-bold' : 'text-gray-700'}`}
-             title={`${match.pair2.player1.name}/${match.pair2.player2.name}`}>
-          {match.pair2.player1.name}
-          <div className="text-[10px] text-gray-500">{match.pair2.player2.name}</div>
-        </div>
+      {/* BODY: Player 1 | Score | Player 2 */}
+      <div className="p-3 flex items-center gap-3">
+          {/* Player 1 */}
+          <div className={`flex-1 text-right min-w-0 flex flex-col justify-center ${isWin1 ? 'text-green-700' : 'text-gray-700'}`}>
+             <div className="font-bold text-xs sm:text-sm truncate leading-tight" title={match.pair1.player1.name}>{match.pair1.player1.name}</div>
+             <div className="text-[10px] sm:text-xs text-gray-400 truncate leading-tight" title={match.pair1.player2.name}>{match.pair1.player2.name}</div>
+          </div>
 
-        {/* Save Button */}
-        <button 
-          onClick={handleSave}
-          className="ml-1 p-2 text-indigo-500 hover:bg-indigo-50 rounded-full transition-colors"
-          title="Salvar Resultado"
-        >
-          <Save size={18} />
-        </button>
+          {/* Score Inputs */}
+          <div className="flex items-center gap-1.5 shrink-0">
+             <input
+                type="number"
+                min="0"
+                max="12"
+                value={s1}
+                onChange={(e) => setS1(e.target.value)}
+                className={`w-10 h-10 text-center border rounded-lg font-bold text-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-colors shadow-sm ${isWin1 ? 'bg-green-600 border-green-600 text-white' : 'bg-gray-50 border-gray-200 text-gray-800'}`}
+              />
+              <span className="text-gray-300 font-bold text-xs">X</span>
+              <input
+                type="number"
+                min="0"
+                max="12"
+                value={s2}
+                onChange={(e) => setS2(e.target.value)}
+                className={`w-10 h-10 text-center border rounded-lg font-bold text-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-colors shadow-sm ${isWin2 ? 'bg-green-600 border-green-600 text-white' : 'bg-gray-50 border-gray-200 text-gray-800'}`}
+              />
+          </div>
+
+          {/* Player 2 */}
+          <div className={`flex-1 text-left min-w-0 flex flex-col justify-center ${isWin2 ? 'text-green-700' : 'text-gray-700'}`}>
+             <div className="font-bold text-xs sm:text-sm truncate leading-tight" title={match.pair2.player1.name}>{match.pair2.player1.name}</div>
+             <div className="text-[10px] sm:text-xs text-gray-400 truncate leading-tight" title={match.pair2.player2.name}>{match.pair2.player2.name}</div>
+          </div>
       </div>
     </div>
   );

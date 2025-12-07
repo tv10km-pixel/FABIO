@@ -42,7 +42,8 @@ const App: React.FC = () => {
     }));
   });
 
-  // Persistence
+  // --- Persistence & Multi-tab Sync ---
+  // Save to local storage whenever state changes
   useEffect(() => {
     localStorage.setItem('bt_athletes', JSON.stringify(athletes));
   }, [athletes]);
@@ -50,6 +51,25 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('bt_stages', JSON.stringify(stages));
   }, [stages]);
+
+  // Listen for storage events to update state if changed in another tab (e.g., Admin tab updates, TV tab reflects)
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'bt_stages' && e.newValue) {
+        const parsedStages = JSON.parse(e.newValue);
+        setStages(parsedStages.map((s: any) => ({
+          ...s,
+          pairs: s.pairs || []
+        })));
+      }
+      if (e.key === 'bt_athletes' && e.newValue) {
+        setAthletes(JSON.parse(e.newValue));
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
 
   const currentStage = stages.find(s => s.id === activeStageId);
 
@@ -72,7 +92,7 @@ const App: React.FC = () => {
     if (!currentStage) return;
     setShareData({
       stageName: currentStage.name,
-      matchLabel: `${groupName} - ${match.label}`,
+      matchLabel: `${groupName} - ${match.label}${match.court ? ` (${match.court})` : ''}`,
       pair1: match.pair1,
       pair2: match.pair2,
       score1: match.score1 ?? 0,
@@ -84,7 +104,7 @@ const App: React.FC = () => {
     if (!currentStage || !match.pair1 || !match.pair2) return;
     setShareData({
       stageName: currentStage.name,
-      matchLabel: `${match.label} - Mata-Mata`,
+      matchLabel: `${match.label}${match.court ? ` - ${match.court}` : ''}`,
       pair1: match.pair1,
       pair2: match.pair2,
       score1: match.score1 ?? 0,
@@ -242,14 +262,14 @@ const App: React.FC = () => {
     }));
   };
 
-  const handleUpdateMatchScore = (groupId: string, matchId: string, score1: number, score2: number) => {
+  const handleUpdateMatchScore = (groupId: string, matchId: string, score1: number, score2: number, court: string) => {
     updateCurrentStage(stage => ({
       ...stage,
       groups: stage.groups.map(group => {
         if (group.id !== groupId) return group;
         const updatedMatches = group.matches?.map(match => {
           if (match.id !== matchId) return match;
-          return { ...match, score1, score2, isFinished: true };
+          return { ...match, score1, score2, isFinished: true, court };
         });
         return { ...group, matches: updatedMatches };
       })
@@ -314,16 +334,22 @@ const App: React.FC = () => {
     let roundNum = 1;
     let matchCounter = 1;
 
+    // Add first round matches to list
     currentRoundMatches.forEach((m) => {
        m.label = `J${matchCounter++} (R${roundNum})`;
        newMatches.push(m);
     });
 
+    // Generate subsequent rounds
     while (currentRoundMatches.length > 1) {
       const nextRoundMatches: TournamentMatch[] = [];
       const nextRoundNum = roundNum + 1;
+      // Determine if this is the "Semifinal" round
+      // If currentRoundMatches.length is 2, the NEXT round will be the Final (so current is Semis)
+      const isSemiFinalRound = currentRoundMatches.length === 2;
 
       for (let i = 0; i < currentRoundMatches.length; i += 2) {
+        // Create Winner Match (Final or Next Round)
         const nextMatchId = crypto.randomUUID();
         const nextMatch: TournamentMatch = {
           id: nextMatchId,
@@ -333,12 +359,33 @@ const App: React.FC = () => {
         newMatches.push(nextMatch);
         nextRoundMatches.push(nextMatch);
 
+        // Link winners
         currentRoundMatches[i].nextMatchId = nextMatchId;
         currentRoundMatches[i].nextMatchSlot = 1;
         
         if (currentRoundMatches[i+1]) {
           currentRoundMatches[i+1].nextMatchId = nextMatchId;
           currentRoundMatches[i+1].nextMatchSlot = 2;
+        }
+
+        // Logic for 3rd Place Match (only if we are processing semifinals)
+        if (isSemiFinalRound) {
+            const thirdPlaceMatchId = crypto.randomUUID();
+            const thirdPlaceMatch: TournamentMatch = {
+                id: thirdPlaceMatchId,
+                round: nextRoundNum, // Same round number as Final
+                label: '3º Lugar', // Special label
+            };
+            newMatches.push(thirdPlaceMatch);
+            
+            // Link losers
+            currentRoundMatches[i].loserNextMatchId = thirdPlaceMatchId;
+            currentRoundMatches[i].loserNextMatchSlot = 1;
+
+            if (currentRoundMatches[i+1]) {
+                currentRoundMatches[i+1].loserNextMatchId = thirdPlaceMatchId;
+                currentRoundMatches[i+1].loserNextMatchSlot = 2;
+            }
         }
       }
       currentRoundMatches = nextRoundMatches;
@@ -347,6 +394,8 @@ const App: React.FC = () => {
 
     const totalRounds = roundNum;
     newMatches.forEach(m => {
+       if (m.label === '3º Lugar') return; // Keep label
+       
        if (m.round === totalRounds) m.label = "Final";
        else if (m.round === totalRounds - 1) m.label = "Semifinal";
        else if (m.round === totalRounds - 2) m.label = "Quartas";
@@ -356,7 +405,7 @@ const App: React.FC = () => {
     updateCurrentStage(stage => ({ ...stage, tournamentMatches: newMatches }));
   };
 
-  const handleUpdateTournamentScore = (matchId: string, score1: number, score2: number) => {
+  const handleUpdateTournamentScore = (matchId: string, score1: number, score2: number, court: string) => {
     updateCurrentStage(stage => {
       const newMatches = [...stage.tournamentMatches];
       const matchIndex = newMatches.findIndex(m => m.id === matchId);
@@ -365,13 +414,26 @@ const App: React.FC = () => {
       const match = { ...newMatches[matchIndex] };
       match.score1 = score1;
       match.score2 = score2;
+      match.court = court;
 
-      if (score1 > score2 && match.pair1) match.winner = match.pair1;
-      else if (score2 > score1 && match.pair2) match.winner = match.pair2;
-      else match.winner = undefined;
+      let loser: Pair | undefined;
+
+      if (score1 > score2 && match.pair1) {
+          match.winner = match.pair1;
+          loser = match.pair2;
+      }
+      else if (score2 > score1 && match.pair2) {
+          match.winner = match.pair2;
+          loser = match.pair1;
+      }
+      else {
+          match.winner = undefined;
+          loser = undefined;
+      }
 
       newMatches[matchIndex] = match;
 
+      // Propagate Winner
       if (match.winner && match.nextMatchId) {
         const nextMatchIndex = newMatches.findIndex(m => m.id === match.nextMatchId);
         if (nextMatchIndex !== -1) {
@@ -380,6 +442,17 @@ const App: React.FC = () => {
           else nextMatch.pair2 = match.winner;
           newMatches[nextMatchIndex] = nextMatch;
         }
+      }
+
+      // Propagate Loser (for 3rd place)
+      if (loser && match.loserNextMatchId) {
+          const loserMatchIndex = newMatches.findIndex(m => m.id === match.loserNextMatchId);
+          if (loserMatchIndex !== -1) {
+              const loserMatch = { ...newMatches[loserMatchIndex] };
+              if (match.loserNextMatchSlot === 1) loserMatch.pair1 = loser;
+              else loserMatch.pair2 = loser;
+              newMatches[loserMatchIndex] = loserMatch;
+          }
       }
 
       return { ...stage, tournamentMatches: newMatches };
@@ -412,9 +485,7 @@ const App: React.FC = () => {
       <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <div className="bg-gradient-to-br from-orange-500 to-amber-500 p-2 rounded-lg shadow-md">
-              <Trophy className="text-white w-5 h-5" />
-            </div>
+            <img src="https://i.imgur.com/n60mKq5.png" alt="Tv Neblina" className="h-10 object-contain" />
             <h1 className="text-xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-orange-600 to-amber-600 tracking-tight hidden sm:block">
               BT Arena
             </h1>

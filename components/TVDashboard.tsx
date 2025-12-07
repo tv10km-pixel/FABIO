@@ -1,55 +1,157 @@
 
-import React, { useEffect, useState, useMemo } from 'react';
-import { Stage, TournamentMatch, Group, Pair } from '../types';
-import { Trophy, X, Grid, GitMerge, Crown, Clock, Activity, ChevronRight, ChevronLeft } from 'lucide-react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { Stage, TournamentMatch, Group, Pair, Match } from '../types';
+import { Trophy, X, Grid, GitMerge, Crown, Clock, Activity, ChevronRight, ChevronLeft, Plane, MapPin } from 'lucide-react';
 
 interface TVDashboardProps {
   stages: Stage[];
   onClose: () => void;
 }
 
+// --- AIRPORT BOARD COMPONENT ---
+const AirportBoardHeader = () => (
+  <div className="grid grid-cols-12 gap-2 px-6 py-3 bg-black border-b-2 border-gray-800 text-gray-500 font-mono text-xs md:text-sm uppercase tracking-[0.2em] sticky top-0 z-20">
+    <div className="col-span-2 pl-2">Jogo</div>
+    <div className="col-span-6">Duelo (Atletas)</div>
+    <div className="col-span-2 text-center">Placar</div>
+    <div className="col-span-2 text-right">Quadra</div>
+  </div>
+);
+
+const AirportBoardRow: React.FC<{ 
+  label: string; 
+  status: 'SCHEDULED' | 'PLAYING' | 'FINISHED'; 
+  p1Name: string; 
+  p2Name: string; 
+  score?: string; 
+  court?: string;
+  isHeader?: boolean;
+}> = ({ label, status, p1Name, p2Name, score, court }) => {
+  
+  // Background logic based on status
+  let rowBg = "bg-[#1a1a1a]"; // Dark gray/black
+  
+  if (status === 'PLAYING') {
+    rowBg = "bg-[#222]";
+  }
+
+  return (
+    <div className={`grid grid-cols-12 gap-2 px-6 py-4 border-b border-gray-800 items-center font-mono ${rowBg} hover:bg-[#2a2a2a] transition-colors`}>
+      {/* MATCH LABEL */}
+      <div className="col-span-2 text-white font-bold text-sm md:text-base truncate pl-2 border-l-2 border-transparent">
+        <span className={status === 'PLAYING' ? 'text-green-400' : (status === 'FINISHED' ? 'text-amber-500' : 'text-gray-400')}>
+            {label}
+        </span>
+      </div>
+
+      {/* PLAYERS */}
+      <div className="col-span-6 flex items-center gap-3 text-white truncate">
+        <span className={`truncate w-[45%] text-right uppercase ${status === 'FINISHED' && score && parseInt(score.split('-')[0]) > parseInt(score.split('-')[1]) ? 'text-amber-400' : 'text-gray-300'}`}>
+            {p1Name}
+        </span>
+        <span className="text-gray-600 text-xs font-bold">VS</span>
+        <span className={`truncate w-[45%] text-left uppercase ${status === 'FINISHED' && score && parseInt(score.split('-')[1]) > parseInt(score.split('-')[0]) ? 'text-amber-400' : 'text-gray-300'}`}>
+            {p2Name}
+        </span>
+      </div>
+
+      {/* SCORE */}
+      <div className="col-span-2 text-center">
+         <span className={`text-xl md:text-2xl font-bold tracking-widest ${status === 'PLAYING' ? 'text-green-400 animate-pulse' : 'text-amber-500'}`}>
+           {score || "00-00"}
+         </span>
+      </div>
+
+      {/* COURT (GATE) */}
+      <div className="col-span-2 flex justify-end">
+        {court ? (
+            <div className="bg-amber-500 text-black px-3 py-1 rounded-sm font-bold text-lg min-w-[3rem] text-center shadow-[0_0_10px_rgba(245,158,11,0.4)]">
+                {court}
+            </div>
+        ) : (
+            <div className="text-gray-600 text-sm">--</div>
+        )}
+      </div>
+    </div>
+  );
+};
+// -------------------------------
+
 export const TVDashboard: React.FC<TVDashboardProps> = ({ stages, onClose }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [currentIndex, setCurrentIndex] = useState(0);
   const [progress, setProgress] = useState(0);
+  
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  const CYCLE_DURATION = 15000; // 15 seconds per slide
-  const UPDATE_INTERVAL = 100; // Update progress bar every 100ms
+  // Constants
+  const SCROLL_SPEED = 25; // pixels per second
+  const START_DELAY = 3000;
+  const END_DELAY = 5000;
+  const MIN_DURATION = 10000;
 
-  // Filter valid stages (just in case)
   const validStages = useMemo(() => stages.filter(s => s.pairs.length > 0), [stages]);
   const currentStage = validStages[currentIndex];
 
-  // Update clock
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // Handle Rotation & Progress Bar
+  // --- Scrolling Logic ---
   useEffect(() => {
-    if (validStages.length <= 1) return;
+    if (validStages.length === 0) return;
 
     setProgress(0);
-    const startTime = Date.now();
+    if (containerRef.current) containerRef.current.scrollTop = 0;
 
-    const progressTimer = setInterval(() => {
-      const elapsed = Date.now() - startTime;
-      const newProgress = Math.min((elapsed / CYCLE_DURATION) * 100, 100);
+    let animationFrameId: number;
+    let startTime: number | null = null;
+    let totalDuration = MIN_DURATION;
+    let scrollDistance = 0;
+    let scrollDuration = 0;
+
+    if (containerRef.current) {
+      const { scrollHeight, clientHeight } = containerRef.current;
+      scrollDistance = scrollHeight - clientHeight;
+      if (scrollDistance > 0) {
+        scrollDuration = (scrollDistance / SCROLL_SPEED) * 1000;
+        totalDuration = START_DELAY + scrollDuration + END_DELAY;
+      }
+    }
+
+    const animate = (timestamp: number) => {
+      if (!startTime) startTime = timestamp;
+      const elapsed = timestamp - startTime;
+
+      const newProgress = Math.min((elapsed / totalDuration) * 100, 100);
       setProgress(newProgress);
-    }, UPDATE_INTERVAL);
 
-    const slideTimer = setInterval(() => {
-      setCurrentIndex((prev) => (prev + 1) % validStages.length);
-    }, CYCLE_DURATION);
+      if (containerRef.current && scrollDistance > 0) {
+        if (elapsed > START_DELAY && elapsed < (START_DELAY + scrollDuration)) {
+          const scrollProgress = (elapsed - START_DELAY) / scrollDuration;
+          containerRef.current.scrollTop = scrollDistance * scrollProgress;
+        } else if (elapsed >= (START_DELAY + scrollDuration)) {
+          containerRef.current.scrollTop = scrollDistance;
+        }
+      }
 
-    return () => {
-      clearInterval(progressTimer);
-      clearInterval(slideTimer);
+      if (elapsed < totalDuration) {
+        animationFrameId = requestAnimationFrame(animate);
+      } else {
+        if (validStages.length > 1) {
+           setCurrentIndex((prev) => (prev + 1) % validStages.length);
+        } else {
+           startTime = null; 
+           containerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+           animationFrameId = requestAnimationFrame(animate); 
+        }
+      }
     };
+    animationFrameId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animationFrameId);
   }, [currentIndex, validStages.length]);
 
-  // Handle ESC key to exit
   useEffect(() => {
     const handleEsc = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
@@ -58,7 +160,6 @@ export const TVDashboard: React.FC<TVDashboardProps> = ({ stages, onClose }) => 
     return () => window.removeEventListener('keydown', handleEsc);
   }, [onClose]);
 
-  // Organize Tournament Data for Current Stage
   const tournamentRounds = useMemo(() => {
     if (!currentStage) return {};
     return currentStage.tournamentMatches.reduce((acc, match) => {
@@ -68,30 +169,17 @@ export const TVDashboard: React.FC<TVDashboardProps> = ({ stages, onClose }) => 
     }, {} as Record<number, TournamentMatch[]>);
   }, [currentStage]);
 
-  if (!currentStage) {
-    return (
-      <div className="fixed inset-0 z-[200] bg-[#0f172a] text-white flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">Nenhuma etapa com dados para exibir.</h1>
-          <button onClick={onClose} className="bg-white/10 px-6 py-2 rounded-lg hover:bg-white/20">Fechar</button>
-        </div>
-      </div>
-    );
-  }
+  if (!currentStage) return null;
 
   const sortedRounds = Object.keys(tournamentRounds).map(Number).sort((a, b) => a - b);
   const finalRound = sortedRounds.length > 0 ? sortedRounds[sortedRounds.length - 1] : null;
-  const finalMatch = finalRound ? tournamentRounds[finalRound][0] : null;
-  const champion = finalMatch?.winner;
+  const finalMatches = finalRound ? tournamentRounds[finalRound] : [];
+  const grandFinalMatch = finalMatches.find(m => m.label.includes("Final"));
+  const champion = grandFinalMatch?.winner;
 
-  // Helper to calculate standings on the fly
   const getGroupStandings = (group: Group) => {
     const stats = new Map<string, { wins: number; balance: number; pair: Pair }>();
-    
-    group.pairs.forEach(p => {
-      stats.set(p.id, { wins: 0, balance: 0, pair: p });
-    });
-
+    group.pairs.forEach(p => stats.set(p.id, { wins: 0, balance: 0, pair: p }));
     group.matches?.forEach(m => {
       if (!m.isFinished || m.score1 === undefined || m.score2 === undefined) return;
       const p1 = stats.get(m.pair1.id);
@@ -103,278 +191,196 @@ export const TVDashboard: React.FC<TVDashboardProps> = ({ stages, onClose }) => 
         p2.balance += (m.score2 - m.score1);
       }
     });
-
-    return Array.from(stats.values())
-      .sort((a, b) => b.wins - a.wins || b.balance - a.balance);
+    return Array.from(stats.values()).sort((a, b) => b.wins - a.wins || b.balance - a.balance);
   };
 
-  const manualNext = () => {
-    setCurrentIndex((prev) => (prev + 1) % validStages.length);
-  };
-
-  const manualPrev = () => {
-    setCurrentIndex((prev) => (prev - 1 + validStages.length) % validStages.length);
-  };
+  const manualNext = () => setCurrentIndex((prev) => (prev + 1) % validStages.length);
+  const manualPrev = () => setCurrentIndex((prev) => (prev - 1 + validStages.length) % validStages.length);
 
   return (
-    <div className="fixed inset-0 z-[200] bg-[#0f172a] text-white overflow-hidden flex flex-col font-sans selection:bg-orange-500 selection:text-white">
-      {/* Progress Bar (Only if multiple stages) */}
-      {validStages.length > 1 && (
-        <div className="absolute top-0 left-0 w-full h-1 bg-white/10 z-[60]">
-          <div 
-            className="h-full bg-gradient-to-r from-orange-500 to-amber-500 transition-all duration-100 ease-linear"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-      )}
+    <div className="fixed inset-0 z-[200] bg-black text-white overflow-hidden flex flex-col font-sans selection:bg-amber-500 selection:text-black">
+      {/* Progress Bar */}
+      <div className="absolute top-0 left-0 w-full h-1.5 bg-gray-900 z-[60]">
+        <div className="h-full bg-amber-500 transition-all duration-100 ease-linear" style={{ width: `${progress}%` }} />
+      </div>
 
-      {/* Dynamic Background Elements */}
-      <div className="absolute top-[-20%] right-[-10%] w-[800px] h-[800px] bg-orange-600/10 rounded-full blur-[120px] pointer-events-none animate-pulse"></div>
-      <div className="absolute bottom-[-20%] left-[-10%] w-[800px] h-[800px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none animate-pulse" style={{ animationDelay: '2s' }}></div>
-
-      {/* Header */}
-      <header className="relative z-50 px-8 py-5 flex justify-between items-center bg-white/5 backdrop-blur-md border-b border-white/5 shadow-lg">
-        <div className="flex items-center gap-5">
-          <div className="bg-gradient-to-br from-orange-500 to-amber-600 p-3 rounded-2xl shadow-lg shadow-orange-500/20 relative overflow-hidden group">
-            <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
-            <Trophy className="text-white w-8 h-8 relative z-10" />
-          </div>
-          <div>
-            <div className="flex items-center gap-3">
-               <h1 key={currentStage.id} className="text-4xl font-black tracking-tighter text-white uppercase italic animate-in slide-in-from-bottom-2 fade-in duration-500">
-                 {currentStage.name}
-               </h1>
-               {validStages.length > 1 && (
-                 <span className="text-xs font-bold bg-white/10 px-2 py-1 rounded text-gray-400">
-                   {currentIndex + 1}/{validStages.length}
-                 </span>
-               )}
-            </div>
-            
-            <div className="flex items-center gap-2 mt-1">
-              <span className="flex h-2 w-2 relative">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-              </span>
-              <p className="text-gray-400 font-bold uppercase tracking-widest text-xs">Resultados em Tempo Real</p>
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-8">
-          <div className="text-right">
-             <div className="flex items-center gap-2 text-gray-400 text-sm font-medium uppercase tracking-wider justify-end">
-               <Clock size={14} /> Horário Local
+      {/* Header - Airport Style */}
+      <header className="relative z-50 px-8 py-6 flex justify-between items-center bg-[#111] border-b border-gray-800 shadow-xl shrink-0">
+        <div className="flex items-center gap-6">
+           <img src="https://i.imgur.com/n60mKq5.png" alt="Tv Neblina" className="h-16 object-contain bg-white rounded-lg px-2" />
+           <div>
+             <h1 className="text-4xl font-black tracking-tighter text-white uppercase font-mono">
+               {currentStage.name}
+             </h1>
+             <div className="flex items-center gap-4 mt-1">
+                <span className="text-amber-500 font-bold font-mono tracking-widest text-sm uppercase">Painel de Jogos</span>
+                {validStages.length > 1 && (
+                  <span className="text-xs font-mono bg-gray-800 px-2 py-1 rounded text-gray-400">
+                    ETAPA {currentIndex + 1}/{validStages.length}
+                  </span>
+                )}
              </div>
-            <p className="text-4xl font-mono font-bold text-white tracking-widest">
-              {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </p>
-          </div>
-          <button 
-            onClick={onClose}
-            className="bg-white/10 hover:bg-white/20 p-3 rounded-full transition-all text-gray-300 hover:text-white hover:scale-110 active:scale-95"
-          >
-            <X size={28} />
-          </button>
+           </div>
         </div>
+        
+        <div className="text-right">
+           <div className="flex items-center gap-2 text-gray-500 text-xs font-mono uppercase tracking-widest justify-end mb-1">
+             <Clock size={12} /> Horário Local
+           </div>
+           <p className="text-5xl font-mono font-bold text-amber-500 tracking-widest">
+              {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+           </p>
+        </div>
+        
+        <button onClick={onClose} className="absolute top-4 right-4 text-gray-700 hover:text-white transition-colors">
+          <X size={24} />
+        </button>
       </header>
 
-      {/* Navigation Controls (Hover to see) */}
+      {/* Controls */}
       {validStages.length > 1 && (
         <>
-          <button onClick={manualPrev} className="absolute left-4 top-1/2 -translate-y-1/2 z-50 p-4 rounded-full bg-black/20 text-white/20 hover:bg-black/40 hover:text-white hover:scale-110 transition-all">
-            <ChevronLeft size={40} />
-          </button>
-          <button onClick={manualNext} className="absolute right-4 top-1/2 -translate-y-1/2 z-50 p-4 rounded-full bg-black/20 text-white/20 hover:bg-black/40 hover:text-white hover:scale-110 transition-all">
-            <ChevronRight size={40} />
-          </button>
+          <button onClick={manualPrev} className="absolute left-4 top-1/2 -translate-y-1/2 z-50 p-4 rounded-full bg-white/5 text-white/20 hover:bg-white/10 hover:text-white transition-all"><ChevronLeft size={40} /></button>
+          <button onClick={manualNext} className="absolute right-4 top-1/2 -translate-y-1/2 z-50 p-4 rounded-full bg-white/5 text-white/20 hover:bg-white/10 hover:text-white transition-all"><ChevronRight size={40} /></button>
         </>
       )}
 
-      {/* Main Content */}
-      {/* key={currentStage.id} triggers a full re-render/animation when stage changes */}
-      <main key={currentStage.id} className="flex-1 p-8 overflow-y-auto custom-scrollbar relative z-10 animate-in fade-in zoom-in-95 duration-500">
+      {/* Main Board */}
+      <main 
+        ref={containerRef}
+        key={currentStage.id} 
+        className="flex-1 overflow-y-auto scrollbar-hide relative z-10 bg-black pb-20"
+      >
         
-        {/* CHAMPION SPOTLIGHT - Only shows if there is a champion */}
-        {champion && (
-          <div className="mb-12">
-            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 p-[2px] shadow-2xl shadow-orange-500/40 transform hover:scale-[1.01] transition-transform duration-500">
-               <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10 mix-blend-overlay"></div>
-               <div className="relative bg-black/40 backdrop-blur-xl rounded-[22px] p-8 flex flex-col md:flex-row items-center justify-between gap-8">
-                  
-                  {/* Left: Trophy & Label */}
-                  <div className="flex items-center gap-6">
-                    <div className="p-6 bg-gradient-to-br from-yellow-300 to-amber-500 rounded-full shadow-lg shadow-amber-500/50 animate-bounce-slow">
-                      <Crown size={64} className="text-white fill-white" />
-                    </div>
-                    <div>
-                      <h2 className="text-amber-300 font-bold uppercase tracking-[0.3em] text-lg mb-1 animate-pulse">Grande Campeão</h2>
-                      <div className="text-5xl md:text-7xl font-black text-white italic tracking-tight drop-shadow-lg">
-                        {champion.player1.name} <span className="text-amber-400">&</span> {champion.player2.name}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right: Score */}
-                  {finalMatch && (
-                    <div className="bg-black/30 rounded-2xl px-8 py-4 border border-white/10">
-                      <div className="text-gray-400 text-xs font-bold uppercase tracking-widest text-center mb-2">Placar Final</div>
-                      <div className="text-6xl font-mono font-bold text-white tracking-widest">
-                         {finalMatch.score1} - {finalMatch.score2}
-                      </div>
-                    </div>
-                  )}
-               </div>
-            </div>
+        {/* CHAMPION BANNER */}
+        {champion && grandFinalMatch && (
+          <div className="w-full bg-gradient-to-r from-amber-600 to-yellow-500 text-black p-8 flex items-center justify-center gap-8 mb-8 shadow-lg shadow-amber-900/40">
+              <Crown size={64} className="animate-bounce" />
+              <div className="text-center">
+                 <h2 className="text-xl font-bold uppercase tracking-[0.5em] mb-2">Grande Campeão</h2>
+                 <div className="text-6xl font-black italic font-mono uppercase">
+                    {champion.player1.name} & {champion.player2.name}
+                 </div>
+              </div>
+              <Trophy size={64} />
           </div>
         )}
 
-        <div className="flex flex-col gap-12 pb-20">
-          
-          {/* TOURNAMENT SECTION */}
+        <div className="container mx-auto max-w-7xl px-4 py-8 space-y-12">
+
+          {/* SECTION: TOURNAMENT (MATA-MATA) */}
           {sortedRounds.length > 0 && (
             <section>
-              <div className="flex items-center gap-3 mb-6 border-b border-white/10 pb-4">
-                <div className="h-8 w-1 bg-indigo-500 rounded-full"></div>
-                <h2 className="text-2xl font-bold text-white flex items-center gap-2 uppercase tracking-wide">
-                  <GitMerge className="text-indigo-400" /> Mata-Mata
+              <div className="flex items-center gap-3 mb-4 pl-2 border-l-4 border-indigo-500">
+                <h2 className="text-2xl font-bold text-indigo-400 uppercase tracking-widest font-mono">
+                  Jogos Eliminatórios
                 </h2>
               </div>
               
-              <div className="flex gap-6 overflow-x-auto pb-6 scrollbar-hide snap-x mask-fade-right">
-                {sortedRounds.map((round, rIndex) => {
-                   const isFinal = round === sortedRounds.length;
-                   return (
-                    <div key={round} className="min-w-[320px] md:min-w-[380px] flex-none snap-center flex flex-col gap-4 animate-in slide-in-from-right duration-700" style={{ animationDelay: `${rIndex * 100}ms` }}>
-                      <h3 className={`text-center py-2 px-4 rounded-lg font-bold uppercase text-sm tracking-wider shadow-lg ${
-                        isFinal ? 'bg-amber-500 text-black shadow-amber-500/20' : 'bg-white/10 text-gray-300'
-                      }`}>
-                        {isFinal ? '🏆 Grande Final' : 
-                         round === sortedRounds.length - 1 ? 'Semifinais' : 
-                         `Rodada ${round}`}
-                      </h3>
-                      
-                      <div className="flex flex-col gap-4">
-                        {tournamentRounds[round].map(match => (
-                          <div key={match.id} className={`relative overflow-hidden rounded-xl border backdrop-blur-md transition-all duration-300 hover:bg-white/10 ${
-                            match.winner 
-                              ? 'bg-white/10 border-white/20 shadow-lg' 
-                              : 'bg-white/5 border-white/5'
-                          }`}>
-                            {match.winner && <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-green-500/20 to-transparent rounded-bl-3xl"></div>}
-                            
-                            <div className="p-4">
-                              <div className="flex justify-between items-center mb-4 opacity-50">
-                                <span className="text-xs font-bold uppercase tracking-wider">{match.label}</span>
-                                {match.winner && <CheckCircleIcon />}
-                              </div>
+              <div className="border-t-4 border-indigo-500 rounded-sm overflow-hidden shadow-2xl bg-[#111]">
+                 <AirportBoardHeader />
+                 
+                 {/* FLIGHT ROWS */}
+                 {sortedRounds.map(round => {
+                   // Sort matches: Finals on top
+                   const matchesInRound = [...tournamentRounds[round]].sort((a, b) => {
+                       if (a.label.includes("Final") && !b.label.includes("Final")) return -1;
+                       if (b.label.includes("Final") && !a.label.includes("Final")) return 1;
+                       return 0;
+                   });
 
-                              {/* Team 1 */}
-                              <div className={`flex justify-between items-center mb-3 ${
-                                match.winner?.id === match.pair1?.id ? 'text-green-400' : 'text-gray-300'
-                              }`}>
-                                <span className={`text-lg md:text-xl font-bold truncate pr-4 ${match.winner?.id === match.pair1?.id ? 'opacity-100' : 'opacity-80'}`}>
-                                  {match.pair1 ? `${match.pair1.player1.name}/${match.pair1.player2.name}` : 'A definir'}
-                                </span>
-                                <span className={`text-2xl font-mono font-bold ${match.winner?.id === match.pair1?.id ? 'text-white bg-green-600/20 px-2 rounded' : ''}`}>
-                                  {match.score1 ?? '-'}
-                                </span>
-                              </div>
+                   return matchesInRound.map(match => {
+                     let status: 'SCHEDULED' | 'PLAYING' | 'FINISHED' = 'SCHEDULED';
+                     if (match.winner) status = 'FINISHED';
+                     else if (match.court) status = 'PLAYING';
 
-                              <div className="h-px bg-white/5 w-full my-2"></div>
-
-                              {/* Team 2 */}
-                              <div className={`flex justify-between items-center ${
-                                match.winner?.id === match.pair2?.id ? 'text-green-400' : 'text-gray-300'
-                              }`}>
-                                <span className={`text-lg md:text-xl font-bold truncate pr-4 ${match.winner?.id === match.pair2?.id ? 'opacity-100' : 'opacity-80'}`}>
-                                  {match.pair2 ? `${match.pair2.player1.name}/${match.pair2.player2.name}` : 'A definir'}
-                                </span>
-                                <span className={`text-2xl font-mono font-bold ${match.winner?.id === match.pair2?.id ? 'text-white bg-green-600/20 px-2 rounded' : ''}`}>
-                                  {match.score2 ?? '-'}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
+                     return (
+                       <AirportBoardRow 
+                          key={match.id}
+                          label={match.label}
+                          status={status}
+                          p1Name={match.pair1 ? `${match.pair1.player1.name}/${match.pair1.player2.name}` : 'A Definir'}
+                          p2Name={match.pair2 ? `${match.pair2.player1.name}/${match.pair2.player2.name}` : 'A Definir'}
+                          score={match.score1 !== undefined && match.score2 !== undefined ? `${match.score1}-${match.score2}` : undefined}
+                          court={match.court}
+                       />
+                     );
+                   });
+                 })}
               </div>
             </section>
           )}
 
-          {/* GROUPS SECTION */}
+          {/* SECTION: GROUPS */}
           {currentStage.groups.length > 0 && (
-            <section>
-              <div className="flex items-center gap-3 mb-6 border-b border-white/10 pb-4">
-                <div className="h-8 w-1 bg-orange-500 rounded-full"></div>
-                <h2 className="text-2xl font-bold text-white flex items-center gap-2 uppercase tracking-wide">
-                  <Grid className="text-orange-400" /> Classificação dos Grupos
+             <section>
+               <div className="flex items-center gap-3 mb-6 pl-2 border-l-4 border-amber-500">
+                <h2 className="text-2xl font-bold text-amber-500 uppercase tracking-widest font-mono">
+                  Fase de Grupos
                 </h2>
               </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                {currentStage.groups.map((group, gIndex) => {
-                  const standings = getGroupStandings(group);
-                  
-                  return (
-                    <div key={group.id} className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden backdrop-blur-sm flex flex-col hover:border-white/20 transition-colors animate-in slide-in-from-bottom duration-700" style={{ animationDelay: `${gIndex * 100}ms` }}>
-                      <div className="bg-white/5 px-5 py-3 border-b border-white/5 flex justify-between items-center">
-                        <span className="font-bold text-lg text-white">{group.name}</span>
-                        <Activity size={16} className="text-orange-500" />
+
+              {/* Group Grid - Keep standings as grid but darken them */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-8 mb-8">
+                 {currentStage.groups.map(group => {
+                    const standings = getGroupStandings(group);
+                    return (
+                      <div key={group.id} className="bg-[#111] border border-gray-800 p-4 rounded-sm">
+                         <div className="flex justify-between items-center mb-3 border-b border-gray-800 pb-2">
+                            <span className="font-mono text-amber-500 font-bold text-lg">{group.name}</span>
+                            <Activity size={16} className="text-gray-600"/>
+                         </div>
+                         <table className="w-full text-sm font-mono text-gray-300">
+                           <thead>
+                             <tr className="text-gray-600 uppercase text-xs">
+                               <th className="text-left pb-2">Dupla</th>
+                               <th className="text-center pb-2">V</th>
+                               <th className="text-center pb-2">SG</th>
+                             </tr>
+                           </thead>
+                           <tbody className="divide-y divide-gray-800">
+                             {standings.map((s, idx) => (
+                               <tr key={s.pair.id}>
+                                 <td className="py-1.5 truncate max-w-[150px]">
+                                   {idx+1}. <span className={idx < 2 ? 'text-white font-bold' : 'text-gray-500'}>{s.pair.player1.name}/{s.pair.player2.name}</span>
+                                 </td>
+                                 <td className="text-center">{s.wins}</td>
+                                 <td className="text-center">{s.balance}</td>
+                               </tr>
+                             ))}
+                           </tbody>
+                         </table>
                       </div>
-                      
-                      <div className="p-0">
-                        {/* Standings Table - Clean & Big */}
-                        <table className="w-full">
-                          <thead>
-                              <tr className="text-gray-500 text-xs uppercase tracking-wider border-b border-white/5">
-                                <th className="text-left py-3 px-5 font-bold">Dupla</th>
-                                <th className="text-center py-3 px-2 font-bold">V</th>
-                                <th className="text-center py-3 px-2 font-bold">SG</th>
-                              </tr>
-                          </thead>
-                          <tbody className="divide-y divide-white/5">
-                            {standings.map((s, idx) => {
-                              const isLeader = idx === 0;
-                              const isQualified = idx < 2; // Assume top 2 qualify usually
-                              return (
-                                <tr key={idx} className={`${isLeader ? 'bg-gradient-to-r from-green-500/10 to-transparent' : ''}`}>
-                                  <td className="py-3 px-5">
-                                    <div className="flex items-center gap-3">
-                                      <span className={`w-6 h-6 flex items-center justify-center rounded text-xs font-bold ${
-                                        isLeader ? 'bg-amber-400 text-black' : 
-                                        isQualified ? 'bg-white/20 text-white' : 'text-gray-500'
-                                      }`}>
-                                        {idx + 1}
-                                      </span>
-                                      <span className={`text-base font-bold truncate max-w-[180px] ${isQualified ? 'text-white' : 'text-gray-400'}`}>
-                                        {s.pair.player1.name} / {s.pair.player2.name}
-                                      </span>
-                                    </div>
-                                  </td>
-                                  <td className="text-center text-base font-bold text-white/90">{s.wins}</td>
-                                  <td className={`text-center text-base font-bold ${s.balance > 0 ? 'text-green-400' : 'text-gray-500'}`}>{s.balance}</td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                      
-                      {/* Latest Result (Footer) */}
-                      {group.matches && group.matches.length > 0 && (
-                        <div className="bg-black/20 p-3 text-xs text-gray-400 border-t border-white/5 flex justify-between items-center">
-                          <span>Últimos Jogos</span>
-                          <span className="text-[10px] uppercase tracking-wider bg-white/10 px-2 py-0.5 rounded animate-pulse">Ao Vivo</span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                    )
+                 })}
               </div>
-            </section>
+
+              {/* GROUP MATCHES - AIRPORT STYLE */}
+              <div className="border-t-4 border-amber-500 rounded-sm overflow-hidden shadow-2xl bg-[#111]">
+                 <AirportBoardHeader />
+                 
+                 {currentStage.groups.flatMap(g => g.matches || []).map(match => {
+                    let status: 'SCHEDULED' | 'PLAYING' | 'FINISHED' = 'SCHEDULED';
+                    if (match.isFinished) status = 'FINISHED';
+                    else if (match.court) status = 'PLAYING';
+                    
+                    // Only show matches that have a court assigned or are finished to reduce clutter? 
+                    // Or show all. Let's show all for "Airport" completeness.
+                    
+                    return (
+                       <AirportBoardRow 
+                          key={match.id}
+                          label={`${match.label} (${currentStage.groups.find(g => g.matches?.includes(match))?.name})`}
+                          status={status}
+                          p1Name={`${match.pair1.player1.name}/${match.pair1.player2.name}`}
+                          p2Name={`${match.pair2.player1.name}/${match.pair2.player2.name}`}
+                          score={match.score1 !== undefined && match.score2 !== undefined ? `${match.score1}-${match.score2}` : undefined}
+                          court={match.court}
+                       />
+                    )
+                 })}
+              </div>
+             </section>
           )}
 
         </div>
@@ -382,9 +388,3 @@ export const TVDashboard: React.FC<TVDashboardProps> = ({ stages, onClose }) => 
     </div>
   );
 };
-
-const CheckCircleIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-400" viewBox="0 0 20 20" fill="currentColor">
-    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-  </svg>
-);
